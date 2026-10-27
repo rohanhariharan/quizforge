@@ -49,6 +49,7 @@ export async function gradeWithAI({ questions, answers, settings }) {
     system: GRADE_SYSTEM,
     user: JSON.stringify({ items }),
     images: [],
+    maxTokens: 4000,
   });
 
   const parsed = parseModelJson(reply.text);

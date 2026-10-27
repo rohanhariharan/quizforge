@@ -674,8 +674,12 @@ function renderResults() {
   // authoritative when the stored answer key disagrees with it).
   if (session.submitted) {
     const local = localGrades(session.questions, session.answers);
+    const overrides = {};
+    for (const [id, grade] of Object.entries(session.grades || {})) {
+      if (grade?.userOverride) overrides[id] = grade;
+    }
     if (!session.aiGraded) {
-      session.grades = local;
+      session.grades = { ...local, ...overrides };
     } else {
       const merged = { ...local, ...(session.grades || {}) };
       for (const [id, grade] of Object.entries(session.grades || {})) {
@@ -690,7 +694,7 @@ function renderResults() {
           };
         }
       }
-      session.grades = merged;
+      session.grades = { ...merged, ...overrides };
     }
   }
 
@@ -778,6 +782,8 @@ function reviewCard(question, index, session) {
       <span class="chip topic">${esc(question.topic)}</span>
       <span class="chip difficulty ${esc(question.difficulty)}">${esc(question.difficulty)}</span>
       <span class="verdict ${verdict}">${verdictLabel}</span>
+      ${verdict !== 'correct' && verdict !== 'blank' ? `<button class="right-btn" data-right="${question.id}" type="button" title="Mark this answer correct and update the score">I was right</button>` : ''}
+      ${grade?.userOverride ? `<button class="link undo-btn" data-undo="${question.id}" type="button">Undo</button>` : ''}
     </div>
     <div class="review-stem"></div>
     <div class="review-graph"></div>
@@ -832,7 +838,43 @@ function reviewCard(question, index, session) {
   }
   if (!question.solution?.length) card.querySelector('.solution')?.remove();
 
+  card.querySelector('[data-right]')?.addEventListener('click', () => markRight(question.id));
+  card.querySelector('[data-undo]')?.addEventListener('click', () => undoRight(question.id));
+
   return card;
+}
+
+function markRight(questionId) {
+  const session = state.session;
+  const question = session?.questions?.find((item) => item.id === questionId);
+  if (!session || !question) return;
+  const previous = session.grades?.[questionId] ?? null;
+  session.grades = {
+    ...(session.grades || {}),
+    [questionId]: {
+      correct: true,
+      verdict: 'correct',
+      detail: 'Marked correct by you.',
+      source: 'user',
+      userOverride: true,
+      previous,
+    },
+  };
+  persistNow();
+  renderResults();
+  toast('Marked correct. Your score was updated.');
+}
+
+function undoRight(questionId) {
+  const session = state.session;
+  const grade = session?.grades?.[questionId];
+  if (!session || !grade?.userOverride) return;
+  const next = { ...(session.grades || {}) };
+  if (grade.previous) next[questionId] = grade.previous;
+  else delete next[questionId];
+  session.grades = next;
+  persistNow();
+  renderResults();
 }
 
 async function runAiGrading() {
@@ -843,6 +885,10 @@ async function runAiGrading() {
   renderResults();
   try {
     const local = localGrades(session.questions, session.answers);
+    const overrides = {};
+    for (const [id, grade] of Object.entries(session.grades || {})) {
+      if (grade?.userOverride) overrides[id] = grade;
+    }
     const grades = await gradeWithAI({
       questions: session.questions,
       answers: session.answers,
@@ -864,7 +910,7 @@ async function runAiGrading() {
         };
       }
     }
-    session.grades = merged;
+    session.grades = { ...merged, ...overrides };
     session.aiGraded = true;
     persistNow();
     const judged = Object.keys(grades).length;
@@ -1014,7 +1060,15 @@ async function startGeneration() {
       mode: state.mode,
       settings: state.settings,
       onProgress: (progress) => {
-        const percent = 16 + Math.round((progress.written / Math.max(1, progress.total)) * 76);
+        if (progress.phase === 'planning') {
+          updateLoading({
+            phase: 'planning',
+            percent: 18,
+            note: progress.note || 'Mapping the topics…',
+          });
+          return;
+        }
+        const percent = 22 + Math.round((progress.written / Math.max(1, progress.total)) * 70);
         updateLoading({
           phase: 'writing',
           percent,

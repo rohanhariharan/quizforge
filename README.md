@@ -9,6 +9,8 @@ themselves.
 Built with **Tauri 2** — a native webview and a ~9 MB binary, not an Electron
 bundle.
 
+**Download:** [macOS & Windows](https://rohanhariharan.github.io/quizforge/) · [latest release](https://github.com/rohanhariharan/quizforge/releases/latest)
+
 ![The upload screen](docs/welcome.png)
 
 ## What it does
@@ -18,6 +20,10 @@ bundle.
 - **A consistent question format** — every question has the same structure:
   topic, difficulty, a stem, a typed final answer, a worked solution, an
   optional hint, and an optional graph.
+- **New questions, not copies** — the attachment is mapped into topics,
+  skills, and reference facts first. The question writer never sees the
+  source's own exercises, so it writes fresh problems on the same topics
+  instead of renumbering the originals.
 - **Detailed questions, not trivia** — word problems with inline math,
   direct symbolic tasks, and graph questions. The model is told to require at
   least two reasoning steps and to avoid yes/no or recall items.
@@ -33,6 +39,9 @@ bundle.
   ticks) are drawn as SVG. No image generation, no canvas fuzz.
 - **Results** — auto-checking for numeric and exact answers, a side-by-side
   review, worked solutions, and optional **AI grading** for symbolic answers.
+- **An "I was right" override** — every incorrect or uncertain card has one
+  button that marks it correct, updates the score immediately, persists across
+  reloads, and can be undone.
 - **Grading that survives a bad answer key** — if the stored `answer` disagrees
   numerically with the final line of the worked solution, the solution wins.
   Both values are accepted, the solution's value is shown as the answer, and the
@@ -42,6 +51,9 @@ bundle.
 - **OpenRouter only** — one key, one provider, all model choice left to you.
 
 ![A question with a graph](docs/graph.png)
+
+Every incorrect or "check" card has an **I was right** button. It overrides the
+grade, updates the score, and survives a reload:
 
 ![Results and review](docs/results.png)
 
@@ -121,8 +133,8 @@ Intel) and a Windows NSIS installer on every `v*` tag, then attaches them to a
 GitHub release.
 
 ```bash
-git tag v1.0.1
-git push origin v1.0.0
+git tag v1.1.0
+git push origin v1.1.0
 ```
 
 Builds are unsigned. On macOS, right-click the app and choose **Open** the first
@@ -132,19 +144,25 @@ time; on Windows, SmartScreen may ask you to confirm.
 
 1. The attachment is converted to text in the webview (pdf.js, mammoth,
    JSZip), or kept as an image for vision models.
-2. The text is split into passages. A difficulty/type plan is created for the
-   chosen mode.
-3. Small batches (4 questions) are requested from OpenRouter with a strict JSON
-   schema. Each batch gets the plan slots, a passage, and the list of questions
-   already written so it does not repeat setups.
+2. A **topic map** is extracted from a compact sample: subject, level, topics,
+   skills, and reference facts. The prompt explicitly excludes the source's
+   exercises, examples, and answer key.
+3. A difficulty/type plan is created for the chosen mode. Small batches (4
+   questions) are requested from OpenRouter with a strict JSON schema — using
+   the topic map, never the source's questions. Each batch also gets the list
+   of questions already written so it does not repeat setups.
 4. Every response is parsed and validated: the stem, answer, worked steps,
    choice of type, and — for graph questions — that the graph spec compiles and
    has something to draw.
-5. Valid, non-duplicate questions are kept until the quiz is full. If a batch
-   fails, it is retried; rate limits are respected.
+5. Duplicate stems, reused graphs, and topics used more than three times are
+   rejected. Valid questions are kept until the quiz is full. If a batch fails,
+   it is retried; rate limits are respected.
 
-The system prompt treats the attachment as **material, not instructions**, and
-requires a single checkable final answer per question.
+The topic map is what makes the quiz fresh: the writer knows *what* to test,
+but never sees the original problems. If the map call fails, the app falls back
+to the source with an explicit no-copies rule. The system prompt treats the
+attachment as **material, not instructions**, and requires a single checkable
+final answer per question.
 
 ## Data and privacy
 

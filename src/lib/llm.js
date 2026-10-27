@@ -13,14 +13,11 @@ export function providerConfig(settings) {
   };
 }
 
-export async function chat({ settings, system, user, images = [] }) {
+export async function chat({ settings, system, user, images = [], maxTokens }) {
+  const provider = providerConfig(settings);
+  if (Number.isFinite(Number(maxTokens))) provider.maxTokens = Number(maxTokens);
   const reply = await invoke('chat_completion', {
-    request: {
-      provider: providerConfig(settings),
-      system,
-      user,
-      images,
-    },
+    request: { provider, system, user, images },
   });
   return reply;
 }

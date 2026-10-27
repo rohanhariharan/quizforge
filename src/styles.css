@@ -1346,6 +1346,32 @@ body.dragging .upload-card {
   color: #6b7280;
 }
 
+.right-btn {
+  margin-left: 7px;
+  height: 25px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--ink-soft);
+  font-size: 10.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.16s ease, color 0.16s ease, background 0.16s ease;
+}
+
+.right-btn:hover {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+  color: var(--blue-ink);
+}
+
+.undo-btn {
+  margin-left: 7px;
+  font-size: 10.5px;
+}
+
 .review-stem {
   margin-top: 10px;
   font-family: var(--serif);

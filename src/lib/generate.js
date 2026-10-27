@@ -1,5 +1,5 @@
 import { chat } from './llm.js';
-import { SYSTEM_PROMPT, batchPrompt } from './prompts.js';
+import { SYSTEM_PROMPT, TOPIC_SYSTEM, batchPrompt, topicPrompt } from './prompts.js';
 import {
   BATCH_SIZE,
   coveredList,
@@ -61,15 +61,99 @@ function fatal(message) {
   return /HTTP (401|403)/.test(message) || /API key/i.test(message) || /No model/i.test(message);
 }
 
+// A compact sample of the source, used only to map topics. The generation
+// batches never see the source's own questions, so they cannot copy them.
+function planSource(doc) {
+  if (Array.isArray(doc.images) && doc.images.length) {
+    return { text: doc.text || '', images: doc.images };
+  }
+  const chunks = chunkText(doc.text);
+  if (!chunks.length) return { text: '', images: [] };
+  const picks =
+    chunks.length <= 4
+      ? chunks
+      : [
+          chunks[0],
+          chunks[Math.floor(chunks.length / 3)],
+          chunks[Math.floor((2 * chunks.length) / 3)],
+          chunks[chunks.length - 1],
+        ];
+  let text = picks
+    .map((chunk, index) => `[part ${index + 1} of ${picks.length}]\n${chunk}`)
+    .join('\n\n');
+  if (text.length > 18_000) text = text.slice(0, 18_000);
+  return { text, images: [] };
+}
+
+async function buildTopicPlan({ doc, settings, shouldStop, mode, total }) {
+  if (shouldStop?.()) return null;
+  const source = planSource(doc);
+  const reply = await chat({
+    settings,
+    system: TOPIC_SYSTEM,
+    user: topicPrompt({ docName: doc.name, source, mode, total }),
+    maxTokens: 3000,
+    images: source.images,
+  });
+  if (shouldStop?.()) return null;
+
+  const parsed = parseModelJson(reply.text);
+  const topics = (Array.isArray(parsed?.topics) ? parsed.topics : [])
+    .map((topic) => {
+      const facts = topic?.keyFacts ?? topic?.key_facts;
+      return {
+        name: String(topic?.name ?? '').trim(),
+        skills: (Array.isArray(topic?.skills) ? topic.skills : [])
+          .map((skill) => String(skill).trim())
+          .filter(Boolean)
+          .slice(0, 4),
+        keyFacts: (Array.isArray(facts) ? facts : [])
+          .map((fact) => String(fact).trim())
+          .filter(Boolean)
+          .slice(0, 4),
+      };
+    })
+    .filter((topic) => topic.name)
+    .slice(0, 16);
+
+  if (!topics.length) throw new Error('The topic map came back empty.');
+  return {
+    subject: String(parsed?.subject || doc.name).slice(0, 80),
+    level: String(parsed?.level || '').slice(0, 40),
+    topics,
+  };
+}
+
+function stateStopped(shouldStop) {
+  return Boolean(shouldStop?.());
+}
+
 export async function generateQuiz({ doc, mode, settings, onProgress, shouldStop }) {
   const plan = planFor(mode);
-  const sources = buildSources(doc);
   const accepted = [];
   const notes = [];
   let rejected = 0;
   let cursor = 0;
   let stagnant = 0;
   let calls = 0;
+
+  onProgress?.({ phase: 'planning', note: 'Mapping the topics in the source' });
+
+  let topicPlan = null;
+  try {
+    topicPlan = await buildTopicPlan({ doc, settings, shouldStop, mode, total: plan.total });
+  } catch (error) {
+    notes.push(`Topic map unavailable: ${error?.message || error}`);
+  }
+  if (stateStopped(shouldStop)) return { questions: [], notes, rejected, stopped: true, requested: plan.total, seconds: plan.seconds };
+
+  const sources = topicPlan ? [{ text: '', images: [] }] : buildSources(doc);
+  if (topicPlan) {
+    onProgress?.({
+      phase: 'planning',
+      note: `${topicPlan.topics.length} topics mapped — writing new questions`,
+    });
+  }
 
   const maxCalls = Math.ceil(plan.total / BATCH_SIZE) + 9;
 
@@ -100,6 +184,7 @@ export async function generateQuiz({ doc, mode, settings, onProgress, shouldStop
       covered: coveredList(accepted),
       mode,
       hasImages: Boolean(source.images?.length),
+      plan: topicPlan,
     });
 
     let text = null;

@@ -244,8 +244,8 @@ export function isDuplicate(question, existing) {
     if (similarity(templateA, templateTokens(other.stem)) >= 0.8) return true;
   }
 
-  // Three questions with the same subject label means the generator is stuck.
-  if (topicA && topicA !== 'general' && sameTopic >= 2) return true;
+  // Four questions with the same subject label means the generator is stuck.
+  if (topicA && topicA !== 'general' && sameTopic >= 3) return true;
   return false;
 }
 
