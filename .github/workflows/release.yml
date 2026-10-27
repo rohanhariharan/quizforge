@@ -1,0 +1,66 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            label: macOS (universal)
+            args: '--target universal-apple-darwin'
+            targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
+          - platform: windows-latest
+            label: Windows (x64)
+            args: ''
+            targets: ''
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and attach to release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: 'QuizForge v__VERSION__'
+          releaseBody: |
+            QuizForge turns an attachment into a timed, LaTeX-native quiz.
+
+            - macOS: universal DMG (Apple silicon + Intel)
+            - Windows: x64 installer
+
+            The builds are unsigned. On macOS, right-click the app and choose Open
+            the first time. On Windows, confirm the SmartScreen prompt.
+
+            You need an OpenRouter API key: https://openrouter.ai/keys
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
